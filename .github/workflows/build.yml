@@ -236,92 +236,6 @@ jobs:
             build/legacy/tvgame*.dll
           if-no-files-found: error
 
-  android-mod:
-    runs-on: ubuntu-20.04
-    needs: version
-    env:
-      SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGN_APK_ALLIAS }}
-      SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGN_APK_PASS }}
-      SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGN_APK_PASS }}
-      CI_ETL_DESCRIBE: ${{needs.version.outputs.describe}}
-      CI_ETL_TAG: ${{needs.version.outputs.tag}}
-    container:
-      image: etlegacy/android-build
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-          fetch-depth: 0
-
-      - name: Setup JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Build JoyStick Dependency
-        working-directory: ./app/libs/joystick
-        run: |
-          ./gradlew clean               --stacktrace --info
-          ./gradlew assembleRelease     --stacktrace --info
-          ./gradlew publishToMavenLocal --stacktrace --info
-
-      - name: Upload JoyStick Dependency Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-joystick-packages
-          path: '/root/.m2/repository/com/etlegacy/android/joystick/'
-          if-no-files-found: error
-
-      - name: Build Release
-        if: github.repository == 'etlegacy/etlegacy'
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          ./gradlew clean assembleRelease --stacktrace --info
-          ls -R
-      - name: Build Debug
-        if: github.repository != 'etlegacy/etlegacy'
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          ./gradlew clean assembleDebug --stacktrace --info
-          ls -R
-
-      - name: Prepare artifacts
-        run: |
-          mv ./app/build/intermediates/merged_native_libs/*/mergeReleaseNativeLibs/out/lib/arm64-v8a/libcgame*.so .
-          mv ./app/build/intermediates/merged_native_libs/*/mergeReleaseNativeLibs/out/lib/arm64-v8a/libui*.so .
-          mv ./app/build/intermediates/merged_native_libs/*/mergeReleaseNativeLibs/out/lib/x86/libcgame*.so .
-          mv ./app/build/intermediates/merged_native_libs/*/mergeReleaseNativeLibs/out/lib/x86/libui*.so .
-          mv ./app/build/intermediates/merged_native_libs/*/mergeReleaseNativeLibs/out/lib/x86_64/libcgame*.so .
-          mv ./app/build/intermediates/merged_native_libs/*/mergeReleaseNativeLibs/out/lib/x86_64/libui*.so .
-          ls -ltrah
-
-      - name: Upload arm64-v8a
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-arm64-mod
-          path: |
-            libcgame*arm64*.so
-            libui*arm64*.so
-          if-no-files-found: error
-
-      - name: Upload x86
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-x86-mod
-          path: |
-            libcgame*i386.so
-            libui*i386.so
-          if-no-files-found: error
-
-      - name: Upload x86_64
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-x86_64-mod
-          path: |
-            libcgame*x86_64.so
-            libui*x86_64.so
-          if-no-files-found: error
 
 #   __  __                                                          _
 #  |  \/  |                                                        | |
@@ -335,7 +249,7 @@ jobs:
 # This step also generates the final packages for 32 bit lnx.
   mod-merger:
     runs-on: ubuntu-20.04
-    needs: [ version, lnx64-mod, lnx32-mod, osx-mod, win-mod, win64-mod, lnx-aarch64-mod, android-mod ]
+    needs: [ version, lnx64-mod, lnx32-mod, osx-mod, win-mod, win64-mod, lnx-aarch64-mod ]
     steps:
 
       - uses: actions/download-artifact@v4
@@ -351,7 +265,7 @@ jobs:
       - name: Create supported platform manifest
         shell: bash
         run: |
-          echo "win_x86 win_x86_64 lnx_x86 lnx_x86_64 macos_x86_64 macos_aarch64 lnx_armv8_64 android_aarch64 android_x86 android_x86_64" > platforms.manifest
+          echo "win_x86 win_x86_64 lnx_x86 lnx_x86_64 macos_x86_64 macos_aarch64 lnx_armv8_64 > platforms.manifest
 
       - name: Merge mod files
         shell: bash
@@ -659,66 +573,6 @@ jobs:
             build/etlegacy-*.zip
           if-no-files-found: error
 
-  android:
-    runs-on: ubuntu-20.04
-    env:
-      SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_SIGN_APK_ALLIAS }}
-      SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_SIGN_APK_PASS }}
-      SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_SIGN_APK_PASS }}
-      CI_ETL_DESCRIBE: ${{needs.version.outputs.describe}}
-      CI_ETL_TAG: ${{needs.version.outputs.tag}}
-    needs: [ version, mod-merger ]
-    container:
-      image: etlegacy/android-build
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Setup JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Download JoyStick Dependency Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: android-joystick-packages
-          path: '/root/.m2/repository/com/etlegacy/android/joystick/'
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: All-mods
-          path: app/src/main/assets
-
-      - name: Display structure of downloaded files
-        run: ls -R
-        working-directory: app/src/main/assets
-
-      - name: Build Release and Generate Package
-        if: github.repository == 'etlegacy/etlegacy'
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          ./gradlew clean assembleRelease --stacktrace --info
-          ls -R
-      - name: Build Debug and Generate Package
-        if: github.repository != 'etlegacy/etlegacy'
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          ./gradlew clean assembleDebug --stacktrace --info
-          ls -R
-
-      - name: Rename APK
-        run: |
-          for FILE in ./app/build/outputs/apk/*/*; do mv "$FILE" "${FILE%-*}.apk"; done
-          ls -R app/build/outputs/apk
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: android-packages
-          path: app/build/outputs/apk/*/etlegacy*.apk
-          if-no-files-found: error
 
 #    ____  _             ____       _   _
 #   / ___|(_) __ _ _ __ |  _ \ __ _| |_| |__
@@ -819,7 +673,7 @@ jobs:
 
   upload:
     runs-on: ubuntu-20.04
-    needs: [ version, sign, lnx32, lnx64, osx, lnx-aarch64, android ]
+    needs: [ version, sign, lnx32, lnx64, osx, lnx-aarch64 ]
     if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: geekyeggo/delete-artifact@v4
@@ -847,84 +701,13 @@ jobs:
           find osx-packages/ -name '*' -type f -exec curl --fail -H "Authorization: Bearer ${{ secrets.LEGACY_AUTH }}" -X POST -H "Content-Type: multipart/form-data" -F "data=@{}" -F "upload_id=zrm0gXDJ0vvQ" -F"sha=${{ github.sha }}" ${{ secrets.LEGACY_UPLOAD_URL }} \;
           find win-packages/ -name '*' -type f -exec curl --fail -H "Authorization: Bearer ${{ secrets.LEGACY_AUTH }}" -X POST -H "Content-Type: multipart/form-data" -F "data=@{}" -F "upload_id=qkKkqKmiKHul" -F"sha=${{ github.sha }}" ${{ secrets.LEGACY_UPLOAD_URL }} \;
           find win64-packages/ -name '*' -type f -exec curl --fail -H "Authorization: Bearer ${{ secrets.LEGACY_AUTH }}" -X POST -H "Content-Type: multipart/form-data" -F "data=@{}" -F "upload_id=1EM7l2e6pqpA" -F"sha=${{ github.sha }}" ${{ secrets.LEGACY_UPLOAD_URL }} \;
-          find android-packages/ -name '*' -type f -exec curl --fail -H "Authorization: Bearer ${{ secrets.LEGACY_AUTH }}" -X POST -H "Content-Type: multipart/form-data" -F "data=@{}" -F "upload_id=pqxx51ioaosg" -F"sha=${{ github.sha }}" ${{ secrets.LEGACY_UPLOAD_URL }} \;
           find lnx-aarch64-packages/ -name '*' -type f -exec curl --fail -H "Authorization: Bearer ${{ secrets.LEGACY_AUTH }}" -X POST -H "Content-Type: multipart/form-data" -F "data=@{}" -F "upload_id=r3tqepamenlf" -F"sha=${{ github.sha }}" ${{ secrets.LEGACY_UPLOAD_URL }} \;
           find mod-zip/ -name '*' -type f -exec curl --fail -H "Authorization: Bearer ${{ secrets.LEGACY_AUTH }}" -X POST -H "Content-Type: multipart/form-data" -F "data=@{}" -F "upload_id=eacan4jn14wt" -F"sha=${{ github.sha }}" ${{ secrets.LEGACY_UPLOAD_URL }} \;
-
-      - name: Discord notification
-        if: ${{ steps.vars.outputs.hash_exists == '404' && needs.version.outputs.describe != needs.version.outputs.tag }}
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.PUBLISH_DISCORD_WEBHOOK }}
-        uses: Ilshidur/action-discord@0.3.0
-        with:
-          args: "<@&673533235887865879> Build from ETLegacy: ${{ needs.version.outputs.describe }} (${{ github.sha }}) has been published.\nDownload at: https://www.etlegacy.com/workflow-files"
-
-  docker:
-    runs-on: ubuntu-20.04
-    needs: [ version, upload ] # only upload to docker if the upload to the site was successfully completed
-    # only run on master
-    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
-    env:
-      CI_ETL_DESCRIBE: ${{needs.version.outputs.describe}}
-      CI_ETL_TAG: ${{needs.version.outputs.tag}}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: lnx64-packages
-          path: build/package
-
-      - name: Setup folder
-        working-directory: build/package
-        run: cp ../../misc/docker/dedicated.Dockerfile ./Dockerfile
-
-      - name: Package folder contents
-        working-directory: build/package
-        run: |
-          ls -R
-
-      - name: Login to DockerHub Registry
-        run: echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
-
-      - name: Get the version
-        id: vars
-        run: |
-          tag_missing=$(docker manifest inspect "etlegacy/server:${CI_ETL_DESCRIBE}" > /dev/null ; echo $?)
-          echo "Current tag ${{needs.version.outputs.describe}} is missing from Docker: $tag_missing"
-          echo "tag_missing=$tag_missing" >> "$GITHUB_OUTPUT"
-
-      # If we are on any build version then we create the latest-patch version
-      - name: Build the server container
-        working-directory: build/package
-        run: |
-          docker build . --file Dockerfile --tag etlegacy/server:latest-patch
-          docker push etlegacy/server:latest-patch
-
-      # Create weekly tag when scheduled and update when triggered on docker hub
-      - name: Build and push the weekly Docker image
-        if: ${{ github.event_name == 'schedule' }}
-        working-directory: build/package
-        run: |
-          docker tag etlegacy/server:latest-patch etlegacy/server:weekly
-          docker push etlegacy/server:weekly
-
-      # If we are on a release tag, then also create the 'latest' tag on docker hub
-      - name: Build and push the latest Docker image
-        if: needs.version.outputs.describe == needs.version.outputs.tag && steps.vars.outputs.tag_missing == '1' && github.event_name != 'schedule'
-        working-directory: build/package
-        run: |
-          docker tag etlegacy/server:latest-patch "etlegacy/server:${CI_ETL_DESCRIBE}"
-          docker tag etlegacy/server:latest-patch "etlegacy/server:latest"
-          docker push "etlegacy/server:${CI_ETL_DESCRIBE}"
-          docker push "etlegacy/server:latest"
 
   cleanup:
     runs-on: ubuntu-20.04
     if: always()
-    needs: [ upload, docker ]
+    needs: [ upload ]
     steps:
       - uses: geekyeggo/delete-artifact@v4
         with:
